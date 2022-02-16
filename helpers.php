@@ -15,7 +15,10 @@ function getDataFromRss(string $linkRss):string
 }
 
 /**
- * Return 
+ * Вернет отформатировавший маслив из rss источника.
+ * 
+ * @param SimpleXMLElement $item
+ * @return array 
  */
 function getDataAsArray($item):array
 {
@@ -28,6 +31,11 @@ function getDataAsArray($item):array
     ];
 }
 
+/**
+ * Вернет маслив новостей из источника rss.
+ * 
+ * @return array
+ */
 function parseRssDate():array
 {
     global $linkRssChanel;
@@ -41,6 +49,11 @@ function parseRssDate():array
     return $rssArray;
 }
 
+/**
+ * Получает данные из файловой базы данных.
+ * 
+ * @return array
+ */
 function getDataFromJsonDb():array
 {
     if (!file_exists(FILE_JSON_DB)){
@@ -49,11 +62,22 @@ function getDataFromJsonDb():array
     return json_decode( file_get_contents( FILE_JSON_DB), true);
 }
 
+/**
+ * Запишет данные в файловою базу.
+ * 
+ * @param array $data
+ */
 function writeDataInJsonDb(array $data)
 {
     file_put_contents(FILE_JSON_DB, json_encode($data) );
 }
 
+/**
+ * Проверяет новость на уникальность, записывает уникальные в базу.
+ * Вернет true если новость уникальна или false если такая новость уже была.
+ * @param array $news - маслив одной новости
+ * @return bool
+ */
 function isUniqueNews(array $news):bool
 {
     $d =  getDataFromJsonDb();
@@ -71,6 +95,11 @@ function isUniqueNews(array $news):bool
     return $u;
 }
 
+/**
+ * Вернет массив уникальных новостей.
+ * 
+ * @return array
+ */
 function getUniqueNews():array
 {
     $rssArray = parseRssDate();
@@ -94,12 +123,24 @@ function getUniqueNews():array
     return $uNews;
 }
 
+/**
+ * Вернет json оддачу в виде массива из ukr.net для Черкаськой области.
+ * 
+ * @return array
+ */
 function getArrayUkrNetCherkasyNews():array
 {
     $linkJsonSource = 'https://www.ukr.net/news/dat/cherkasy/2/';
     return json_decode(file_get_contents($linkJsonSource), true  );
 }
 
+/**
+ * Отфильтрует новости в которых в заголовке есть упоминания о Городише.
+ * 
+ * @param array $data - массив из отдачи Ukr.net
+ * @param array - отфильтрованные новости
+ * 
+ */
 function filterForGorodischeFromCherkasyNews(array $data):array
 {
     $newses = [];
@@ -113,16 +154,12 @@ function filterForGorodischeFromCherkasyNews(array $data):array
     return $newses;
 }
 
-
 /**
- * 'title' => (string)$item->title,
-    'pubDate' => @strtotime((string)$item->pubDate),
-    'date' => date('d-m-Y H:i', @strtotime((string)$item->pubDate)),
-    'description' => htmlspecialchars( (string)$item->description ),
-    'link' => (string) $item->link,
+ * Оформляет массив из новостей отдачи укр.нет согласно стандарту файловой базы
  * 
+ * @param array $newses
+ * @return array
  */
-
 function formatterNewsForUrkNet(array $newses):array
 {
     $nn = [];
@@ -143,6 +180,11 @@ function formatterNewsForUrkNet(array $newses):array
 
 }
 
+/**
+ * Функция парсер для новостей из укр.нет
+ * 
+ * @return array - массив новостей.
+ */
 function parseUkrNetForGor():array
 {
     $news = getArrayUkrNetCherkasyNews();
@@ -153,7 +195,9 @@ function parseUkrNetForGor():array
 
 
 /**
- * Отправляєт сообщения в Telegram канал
+ * Отправляет сообщения в Telegram канал
+ * 
+ * @return void
  */
 function senderToTelegram()
 {
