@@ -74,6 +74,7 @@ function isUniqueNews(array $news):bool
 function getUniqueNews():array
 {
     $rssArray = parseRssDate();
+    $gorNews = parseUkrNetForGor();
     $uNews = [];
     if (!empty($rssArray['rss'])){
         foreach($rssArray['rss'] as $news) {
@@ -82,8 +83,74 @@ function getUniqueNews():array
             }
         }
     }
+    $news = null;
+    if (!empty($gorNews)){
+        foreach($gorNews as $news) {
+            if ( isUniqueNews($news) ) {
+                $uNews[] = $news;
+            }
+        }
+    }
     return $uNews;
 }
+
+function getArrayUkrNetCherkasyNews():array
+{
+    $linkJsonSource = 'https://www.ukr.net/news/dat/cherkasy/2/';
+    return json_decode(file_get_contents($linkJsonSource), true  );
+}
+
+function filterForGorodischeFromCherkasyNews(array $data):array
+{
+    $newses = [];
+    if (!empty($data['tops']) ) {
+        foreach($data['tops'] as $news) {
+            if (preg_match('#ородищ#usi', $news['Title'])) {
+                $newses[] = $news;
+            }
+        }
+    }
+    return $newses;
+}
+
+
+/**
+ * 'title' => (string)$item->title,
+    'pubDate' => @strtotime((string)$item->pubDate),
+    'date' => date('d-m-Y H:i', @strtotime((string)$item->pubDate)),
+    'description' => htmlspecialchars( (string)$item->description ),
+    'link' => (string) $item->link,
+ * 
+ */
+
+function formatterNewsForUrkNet(array $newses):array
+{
+    $nn = [];
+    $n = (isset($newses['tops'])) ? $newses['tops'] : $newses;
+    foreach($n as $news) {
+        if (!empty($news)) {
+            $nn[] = [
+                'title' => $news['Title'],
+                'pubDate' => $news['DateCreated'],
+                'date' => date('d-m-Y H:i', $news['DateCreated']),
+                'description' => $news['Description'],
+                'link' => $news['Url']
+            ];
+            
+        }
+    }
+    return $nn;
+
+}
+
+function parseUkrNetForGor():array
+{
+    $news = getArrayUkrNetCherkasyNews();
+    $gorMews = filterForGorodischeFromCherkasyNews($news);
+    $data =  formatterNewsForUrkNet($gorMews);
+    return $data;
+}
+
 
 /**
  * Отправляєт сообщения в Telegram канал
@@ -94,6 +161,7 @@ function senderToTelegram()
     $telegram = new Telegram(TELEGRAM_TOKEN);
     $con = array('chat_id' => TELEGRAM_CHAT_ID, 'text' => '');
     foreach($newses as $news) {
+        // echo "<pre>" . $news['title'] . PHP_EOL;
         $text = $news['date'] .
         PHP_EOL . $news['title'] . 
         PHP_EOL . $news['description'] . 
@@ -102,6 +170,8 @@ function senderToTelegram()
         $telegram->sendMessage($con);
     }
 }
+
+
 
 
 

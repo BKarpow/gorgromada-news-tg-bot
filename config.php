@@ -4,7 +4,7 @@ define('FILE_JSON_DB', __DIR__ . '/dbNews.json'); // імя файлу для js
 define('TELEGRAM_TOKEN', ''); // Токен боту телеграм
 define('TELEGRAM_CHAT_ID', '@GorGromadaNews'); // Ід чату в телеграмі
 
-$linkRssChanel = 'https://gromada.org...'; // Джерело RSS Новин
+$linkRssChanel = 'https://gromada.org.ua/rss/104208/'; // Джерело RSS Новин
 
 if ( empty(TELEGRAM_TOKEN) ) {
     die('Заповніть токен боту Telegram який привязаний до каналу.');
