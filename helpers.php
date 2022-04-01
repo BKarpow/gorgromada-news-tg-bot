@@ -3,6 +3,37 @@
 include (__DIR__ . '/vendor/autoload.php');
 include (__DIR__ . '/config.php');
 
+$apiJsonAirChannel = 'https://tg.i-c-a.su/json/air_alert_ua?limit=100';
+$fileLastAirAlarmTimestamp = './airAlarmLast.txt';
+
+
+
+/**
+ * Створює запит GET типу за допомогою бібліотеки cURL
+ * @param string $url
+ * @return string
+ */
+function curlGetRequest(string $url, bool $show = false):string
+{
+    $agent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36'; 
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_USERAGENT, $agent);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    $response_data = curl_exec($ch);
+    if (curl_errno($ch) > 0) {
+        die('Пимилка curl: ' . curl_error($ch));
+    }
+    curl_close($ch);
+    if ($show) {
+        echo "<pre>";
+        var_dump($response_data);
+        echo "</pre>";
+        die();
+    }
+    return $response_data;
+}
+
+
 /**
  * Получает данные из RSS и возражает строку xml
  * 
@@ -11,7 +42,32 @@ include (__DIR__ . '/config.php');
  */
 function getDataFromRss(string $linkRss):string
 {
-    return file_get_contents($linkRss);
+    return curlGetRequest($linkRss);
+}
+
+/**
+ * Отфильтрует лишние символы из описания
+ * 
+ * @param string $description
+ * @return string
+ */
+function stripHtmlCode(string $description):string
+{
+    $filterMask = [
+        '&amp;' => '',
+        'amp;' => '',
+        '&laquo;' => '',
+        'laquo;' => '',
+        'ndash;' => '',
+        '&ndash;' => '',
+        '&raquo;' => '',
+        'raquo;' => '',
+        'nbsp;' => '',
+        '&nbsp;' => ''
+    ];
+    $description = str_replace( array_keys($filterMask),
+                              array_values($filterMask), $description);
+    return $description;
 }
 
 /**
@@ -26,7 +82,7 @@ function getDataAsArray($item):array
         'title' => (string)$item->title,
         'pubDate' => @strtotime((string)$item->pubDate),
         'date' => date('d-m-Y H:i', @strtotime((string)$item->pubDate)),
-        'description' => htmlspecialchars( (string)$item->description ),
+        'description' => stripHtmlCode( (string)$item->description ),
         'link' => (string) $item->link,
     ];
 }
@@ -130,8 +186,9 @@ function getUniqueNews():array
  */
 function getArrayUkrNetCherkasyNews():array
 {
-    $linkJsonSource = 'https://www.ukr.net/news/dat/cherkasy/2/';
-    return json_decode(file_get_contents($linkJsonSource), true  );
+    // $linkJsonSource = 'https://www.ukr.net/news/dat/cherkasy/2/';
+    // return json_decode(curlGetRequest($linkJsonSource, true), true  );
+    return [];
 }
 
 /**
@@ -215,9 +272,128 @@ function senderToTelegram()
     }
 }
 
+/**
+ * Повертає часову мітку в форматі
+ * @return string
+ */
+function getTimestamp():string
+{
+    $timestamp = date('(d.m/H:i)');
+    return (string) $timestamp;
+}
+
+/**
+ * Повітряна тривога, відправляє в канал повідомлення про початок та кінець тривоги
+ * @param bool $start
+ * @param null|string $dateString
+ * @return void
+ */
+function airAlarm(bool $start = true, $dateString = null)
+{
+    $ts = (!empty($dateString)) ? $dateString : getTimestamp();
+    $telegram = new Telegram(TELEGRAM_TOKEN);
+    $con = array('chat_id' => TELEGRAM_CHAT_ID, 'text' => '');
+    if ($start) {
+        $con['text'] = '❗️❗️ПОВІТРЯНА ТРИВОГА ' . $ts;
+    } else {
+        $con['text'] = '🟢 ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ ' . $ts;
+    }
+    $telegram->sendMessage($con);
+}
+
+/**
+ * Функція яка отримує всі пости із каналу повітряних тривог та
+ * повертає їх як відформатований масив
+ * @param string $apiJsonUrl
+ * @return array
+ */
+function getTelegramChannelPosts(string $apiJsonUrl):array
+{
+    $dataJson = curlGetRequest($apiJsonUrl);
+    if (!empty($dataJson)) {
+        $data = json_decode($dataJson, true);
+        $rArray = [];
+        foreach($data['messages'] as $message) {
+            $r = [
+                'dateRaw' => (int)$message['date'],
+                'date' => date( '(d.m/H:i)', (int)$message['date']),
+                'message' => strip_tags( $message['message'] ),
+            ];
+            if (preg_match('#Повітряна тривога#siu', $message['message'])) {
+                $r['start'] = true;
+            }
+            if (preg_match('#Відбій тривоги#siu', $message['message'])) {
+                $r['start'] = false;
+            }
+            $rArray[] = $r;
+        }
+        return $rArray;
+    }
+    return [];
+}
 
 
+/**
+ * Фільрує тривоги тільки по регіону області
+ * @param string $region
+ * @param array $posts
+ * @return array
+ */
+function filterPostForRegion(string $region, array $posts):array
+{
+    $fa = [];
+    foreach ($posts as $post) {
+        if (preg_match('#'.preg_quote($region).'#siu', $post['message'])) {
+            $fa[] = $post;
+        }
+    }
+    // file_put_contents('./' . date('dmH_i') . '.txt', var_export($fa, true) );
+    return $fa;
+}
 
 
+/**
+ * Повертає таймштамп останнього попередження про повітряну тривогу
+ * @return int 
+ */
+function getLastTimestampForAirAlarm():int
+{
+    global $fileLastAirAlarmTimestamp;
+    $stamp = time();
+    if (file_exists($fileLastAirAlarmTimestamp)) {
+        $stamp = trim( file_get_contents($fileLastAirAlarmTimestamp) );
+    } else {
+        file_put_contents($fileLastAirAlarmTimestamp, $stamp);
+    }
 
+    return (int) $stamp;
+}
 
+/**
+ * Записує останній таймштамп тривоги
+ * @param int $timestamp
+ */
+function writeAirAlarmTimestamp(int $timestamp)
+{
+    global $fileLastAirAlarmTimestamp;
+    file_put_contents($fileLastAirAlarmTimestamp, $timestamp);
+}
+
+/**
+ * Головна функція опрацювання повітряних тривог. 
+ * Саме ця функція вирішує відправляти повідомлення про тривогу, чи ні.
+ * @return void
+ */
+function mainAirAlarm()
+{
+    global $apiJsonAirChannel;
+    $data = getTelegramChannelPosts($apiJsonAirChannel);
+    $alarms = filterPostForRegion('#Черкаська_область', $data);
+    
+    foreach($alarms as $alarm) {
+        if (getLastTimestampForAirAlarm() < (int)$alarm['dateRaw']){
+            writeAirAlarmTimestamp((int)$alarm['dateRaw']);
+            airAlarm($alarm['start'], $alarm['date']);
+        }
+    }
+}

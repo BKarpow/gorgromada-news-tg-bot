@@ -5,6 +5,7 @@ vendor
 logs
 composer.lock
 index.php
+config.php
 dbNews.json
 
 
